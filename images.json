@@ -3,27 +3,27 @@
 		{
 			"name": "host",
 			"dockerfile": "Dockerfile",
-			"image": "ghcr.io/xxxbrian/dok-host"
+			"image": "ghcr.io/xvvnet/dok-host"
 		},
 		{
 			"name": "cloud",
 			"dockerfile": "Dockerfile.cloud",
-			"image": "ghcr.io/xxxbrian/dok-cloud"
+			"image": "ghcr.io/xvvnet/dok-cloud"
 		},
 		{
 			"name": "server",
 			"dockerfile": "Dockerfile.server",
-			"image": "ghcr.io/xxxbrian/dok-server"
+			"image": "ghcr.io/xvvnet/dok-server"
 		},
 		{
 			"name": "schedule",
 			"dockerfile": "Dockerfile.schedule",
-			"image": "ghcr.io/xxxbrian/dok-schedule"
+			"image": "ghcr.io/xvvnet/dok-schedule"
 		},
 		{
 			"name": "monitoring",
 			"dockerfile": "Dockerfile.monitoring",
-			"image": "ghcr.io/xxxbrian/dok-monitoring"
+			"image": "ghcr.io/xvvnet/dok-monitoring"
 		}
 	]
 }

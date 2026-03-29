@@ -24,7 +24,7 @@ permissions:
 
 jobs:
   prepare:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2204
     outputs:
       matrix: ${{ steps.select.outputs.matrix }}
     steps:
@@ -54,7 +54,7 @@ jobs:
 
   retag:
     needs: prepare
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2204
     strategy:
       fail-fast: false
       matrix:
