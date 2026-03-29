@@ -149,14 +149,31 @@ jobs:
           set -euo pipefail
 
           dockerfile="upstream/${{ matrix.image.dockerfile }}"
-          grep -q '^ENV NODE_ENV=production$' "$dockerfile"
-          extra_env='ENV DATABASE_URL=postgres://dokploy:dokploy@host.docker.internal:5432/dokploy?connect_timeout=2\nENV POSTGRES_HOST=host.docker.internal\nENV REDIS_HOST=host.docker.internal\n'
+          tmpfile=$(mktemp)
+          inserted=false
 
-          if [[ '${{ matrix.image.name }}' == 'cloud' ]]; then
-            extra_env="${extra_env}ENV IS_CLOUD=true\\n"
+          while IFS= read -r line; do
+            printf '%s\n' "$line" >> "$tmpfile"
+
+            if [[ "$inserted" == false && "$line" == 'ENV NODE_ENV=production' ]]; then
+              cat >> "$tmpfile" <<'EOF'
+ENV DATABASE_URL=postgres://dokploy:dokploy@127.0.0.1:5432/dokploy?connect_timeout=2
+ENV POSTGRES_HOST=127.0.0.1
+ENV REDIS_HOST=127.0.0.1
+EOF
+              if [[ '${{ matrix.image.name }}' == 'cloud' ]]; then
+                printf '%s\n' 'ENV IS_CLOUD=true' >> "$tmpfile"
+              fi
+              inserted=true
+            fi
+          done < "$dockerfile"
+
+          if [[ "$inserted" != true ]]; then
+            echo "Failed to inject CI env into $dockerfile" >&2
+            exit 1
           fi
 
-          perl -0pi -e "s/ENV NODE_ENV=production\nRUN pnpm --filter=\@dokploy\/server build/ENV NODE_ENV=production\n${extra_env}RUN pnpm --filter=\@dokploy\/server build/" "$dockerfile"
+          mv "$tmpfile" "$dockerfile"
 
       - name: Set up QEMU
         if: contains(inputs.platforms, 'arm64')
@@ -204,8 +221,7 @@ jobs:
         with:
           context: upstream
           file: upstream/${{ matrix.image.dockerfile }}
-          add-hosts: |
-            host.docker.internal=host-gateway
+          network: host
           push: true
           platforms: ${{ inputs.platforms }}
           tags: ${{ steps.meta.outputs.tags }}
