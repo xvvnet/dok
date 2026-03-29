@@ -76,4 +76,4 @@ jobs:
             -f release_tag="$tag" \
             -f images=all \
             -f publish_latest=true \
-            -f platforms=linux/amd64,linux/arm64
+            -f platforms=linux/amd64
