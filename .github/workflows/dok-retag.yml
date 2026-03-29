@@ -1,0 +1,85 @@
+name: dok-retag
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_tag:
+        description: Existing tag to copy from, e.g. v0.28.8 or sha-d0c92d8
+        required: true
+        type: string
+      target_tag:
+        description: Tag to overwrite, e.g. latest
+        required: false
+        default: latest
+        type: string
+      images:
+        description: all or comma-separated image names (host,cloud,server,schedule,monitoring)
+        required: false
+        default: all
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.select.outputs.matrix }}
+    steps:
+      - name: Checkout dok repo
+        uses: actions/checkout@v4
+
+      - name: Select images
+        id: select
+        shell: bash
+        run: |
+          set -euo pipefail
+          images_input='${{ inputs.images }}'
+
+          if [[ "$images_input" == "all" ]]; then
+            matrix=$(jq -c '.images' images.json)
+          else
+            requested_json=$(printf '%s' "$images_input" | tr ',' '\n' | sed 's/^ *//;s/ *$//' | jq -R . | jq -sc .)
+            matrix=$(jq -c --argjson requested "$requested_json" '.images | map(select(.name as $name | $requested | index($name)))' images.json)
+          fi
+
+          if [[ "$(jq 'length' <<<"$matrix")" -eq 0 ]]; then
+            echo "No images matched input: $images_input" >&2
+            exit 1
+          fi
+
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+
+  retag:
+    needs: prepare
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ${{ fromJson(needs.prepare.outputs.matrix) }}
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify source tag exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker buildx imagetools inspect "${{ matrix.image.image }}:${{ inputs.source_tag }}" > /dev/null
+
+      - name: Move tag for ${{ matrix.image.name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker buildx imagetools create \
+            --tag "${{ matrix.image.image }}:${{ inputs.target_tag }}" \
+            "${{ matrix.image.image }}:${{ inputs.source_tag }}"

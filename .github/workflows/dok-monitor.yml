@@ -1,0 +1,79 @@
+name: dok-monitor
+
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+  actions: write
+
+jobs:
+  check-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout dok repo
+        uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Read latest upstream release
+        id: release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          release_json=$(gh api repos/Dokploy/dokploy/releases/latest)
+          tag=$(jq -r '.tag_name' <<<"$release_json")
+          prerelease=$(jq -r '.prerelease' <<<"$release_json")
+          draft=$(jq -r '.draft' <<<"$release_json")
+
+          if [[ "$draft" == "true" || "$prerelease" == "true" ]]; then
+            echo "Latest release is not a stable release, exiting."
+            exit 0
+          fi
+
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Latest release tag is not a stable semver tag: $tag" >&2
+            exit 1
+          fi
+
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Check if release already exists in GHCR
+        id: exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          cloud_image=$(jq -r '.images[] | select(.name == "cloud") | .image' images.json)
+          tag='${{ steps.release.outputs.tag }}'
+
+          if docker manifest inspect "${cloud_image}:${tag}" > /dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Trigger build workflow
+        if: steps.exists.outputs.exists == 'false'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag='${{ steps.release.outputs.tag }}'
+          gh workflow run dok-build.yml \
+            --ref "${{ github.ref_name }}" \
+            -f upstream_ref="$tag" \
+            -f release_tag="$tag" \
+            -f images=all \
+            -f publish_latest=true \
+            -f platforms=linux/amd64,linux/arm64

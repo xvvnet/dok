@@ -1,0 +1,175 @@
+name: dok-build
+
+on:
+  workflow_dispatch:
+    inputs:
+      upstream_ref:
+        description: Git tag or commit SHA from Dokploy/dokploy
+        required: true
+        type: string
+      release_tag:
+        description: Release tag to publish, e.g. v0.28.8. Leave empty for commit-only builds.
+        required: false
+        default: ""
+        type: string
+      images:
+        description: all or comma-separated image names (host,cloud,server,schedule,monitoring)
+        required: false
+        default: all
+        type: string
+      publish_latest:
+        description: Also move latest to this build
+        required: false
+        default: false
+        type: boolean
+      platforms:
+        description: Docker platforms
+        required: false
+        default: linux/amd64,linux/arm64
+        type: string
+  workflow_call:
+    inputs:
+      upstream_ref:
+        required: true
+        type: string
+      release_tag:
+        required: false
+        default: ""
+        type: string
+      images:
+        required: false
+        default: all
+        type: string
+      publish_latest:
+        required: false
+        default: false
+        type: boolean
+      platforms:
+        required: false
+        default: linux/amd64,linux/arm64
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: dok-build-${{ inputs.release_tag != '' && inputs.release_tag || inputs.upstream_ref }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.select.outputs.matrix }}
+      release_tag: ${{ steps.select.outputs.release_tag }}
+    steps:
+      - name: Checkout dok repo
+        uses: actions/checkout@v4
+
+      - name: Select images
+        id: select
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          images_input='${{ inputs.images }}'
+          release_tag='${{ inputs.release_tag }}'
+          upstream_ref='${{ inputs.upstream_ref }}'
+
+          if [[ -z "$release_tag" && "$upstream_ref" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            release_tag="$upstream_ref"
+          fi
+
+          if [[ "$images_input" == "all" ]]; then
+            matrix=$(jq -c '.images' images.json)
+          else
+            requested_json=$(printf '%s' "$images_input" | tr ',' '\n' | sed 's/^ *//;s/ *$//' | jq -R . | jq -sc .)
+            matrix=$(jq -c --argjson requested "$requested_json" '.images | map(select(.name as $name | $requested | index($name)))' images.json)
+          fi
+
+          if [[ "$(jq 'length' <<<"$matrix")" -eq 0 ]]; then
+            echo "No images matched input: $images_input" >&2
+            exit 1
+          fi
+
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+          echo "release_tag=$release_tag" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: prepare
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ${{ fromJson(needs.prepare.outputs.matrix) }}
+    steps:
+      - name: Checkout Dokploy upstream
+        uses: actions/checkout@v4
+        with:
+          repository: Dokploy/dokploy
+          ref: ${{ inputs.upstream_ref }}
+          path: upstream
+          fetch-depth: 1
+
+      - name: Prepare Dokploy env files
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp upstream/apps/dokploy/.env.production.example upstream/.env.production
+          cp upstream/apps/dokploy/.env.production.example upstream/apps/dokploy/.env.production
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute image tags
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cd upstream
+          sha_short=$(git rev-parse --short=7 HEAD)
+          release_tag='${{ needs.prepare.outputs.release_tag }}'
+          image='${{ matrix.image.image }}'
+          tags=("${image}:sha-${sha_short}")
+
+          if [[ -n "$release_tag" ]]; then
+            tags+=("${image}:${release_tag}")
+          fi
+
+          if [[ '${{ inputs.publish_latest }}' == 'true' ]]; then
+            tags+=("${image}:latest")
+          fi
+
+          {
+            echo 'tags<<EOF'
+            printf '%s\n' "${tags[@]}"
+            echo 'EOF'
+            echo "sha_short=$sha_short"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build and push ${{ matrix.image.name }}
+        uses: docker/build-push-action@v6
+        with:
+          context: upstream
+          file: upstream/${{ matrix.image.dockerfile }}
+          push: true
+          platforms: ${{ inputs.platforms }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/Dokploy/dokploy
+            org.opencontainers.image.revision=${{ steps.meta.outputs.sha_short }}
+            org.opencontainers.image.version=${{ needs.prepare.outputs.release_tag != '' && needs.prepare.outputs.release_tag || format('sha-{0}', steps.meta.outputs.sha_short) }}
+          build-args: |
+            NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=${{ secrets.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY }}

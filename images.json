@@ -1,0 +1,29 @@
+{
+	"images": [
+		{
+			"name": "host",
+			"dockerfile": "Dockerfile",
+			"image": "ghcr.io/xxxbrian/dok-host"
+		},
+		{
+			"name": "cloud",
+			"dockerfile": "Dockerfile.cloud",
+			"image": "ghcr.io/xxxbrian/dok-cloud"
+		},
+		{
+			"name": "server",
+			"dockerfile": "Dockerfile.server",
+			"image": "ghcr.io/xxxbrian/dok-server"
+		},
+		{
+			"name": "schedule",
+			"dockerfile": "Dockerfile.schedule",
+			"image": "ghcr.io/xxxbrian/dok-schedule"
+		},
+		{
+			"name": "monitoring",
+			"dockerfile": "Dockerfile.monitoring",
+			"image": "ghcr.io/xxxbrian/dok-monitoring"
+		}
+	]
+}
