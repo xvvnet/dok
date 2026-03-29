@@ -152,11 +152,9 @@ jobs:
             printf '%s\n' "$line" >> "$tmpfile"
 
             if [[ "$inserted" == false && "$line" == 'ENV NODE_ENV=production' ]]; then
-              cat >> "$tmpfile" <<'EOF'
-ENV DATABASE_URL=postgres://dokploy:dokploy@127.0.0.1:5432/dokploy?connect_timeout=2
-ENV POSTGRES_HOST=127.0.0.1
-ENV REDIS_HOST=127.0.0.1
-EOF
+              printf '%s\n' 'ENV DATABASE_URL=postgres://dokploy:dokploy@127.0.0.1:5432/dokploy?connect_timeout=2' >> "$tmpfile"
+              printf '%s\n' 'ENV POSTGRES_HOST=127.0.0.1' >> "$tmpfile"
+              printf '%s\n' 'ENV REDIS_HOST=127.0.0.1' >> "$tmpfile"
               if [[ '${{ matrix.image.name }}' == 'cloud' ]]; then
                 printf '%s\n' 'ENV IS_CLOUD=true' >> "$tmpfile"
               fi
