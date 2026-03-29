@@ -53,10 +53,6 @@ permissions:
   contents: read
   packages: write
 
-concurrency:
-  group: dok-build-${{ inputs.release_tag != '' && inputs.release_tag || inputs.upstream_ref }}
-  cancel-in-progress: false
-
 jobs:
   prepare:
     runs-on: blacksmith-4vcpu-ubuntu-2204
