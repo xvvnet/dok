@@ -146,24 +146,40 @@ jobs:
 
           dockerfile="upstream/${{ matrix.image.dockerfile }}"
           tmpfile=$(mktemp)
-          inserted=false
+          build_env_inserted=false
+          runtime_env_inserted=false
+          production_env_count=0
 
           while IFS= read -r line; do
             printf '%s\n' "$line" >> "$tmpfile"
 
-            if [[ "$inserted" == false && "$line" == 'ENV NODE_ENV=production' ]]; then
+            if [[ "$line" == 'ENV NODE_ENV=production' ]]; then
+              production_env_count=$((production_env_count + 1))
+            fi
+
+            if [[ "$build_env_inserted" == false && "$line" == 'ENV NODE_ENV=production' ]]; then
               printf '%s\n' 'ENV DATABASE_URL=postgres://dokploy:dokploy@127.0.0.1:5432/dokploy?connect_timeout=2' >> "$tmpfile"
               printf '%s\n' 'ENV POSTGRES_HOST=127.0.0.1' >> "$tmpfile"
               printf '%s\n' 'ENV REDIS_HOST=127.0.0.1' >> "$tmpfile"
               if [[ '${{ matrix.image.name }}' == 'cloud' ]]; then
                 printf '%s\n' 'ENV IS_CLOUD=true' >> "$tmpfile"
               fi
-              inserted=true
+              build_env_inserted=true
+            fi
+
+            if [[ '${{ matrix.image.name }}' == 'cloud' && "$runtime_env_inserted" == false && "$production_env_count" -eq 2 && "$line" == 'ENV NODE_ENV=production' ]]; then
+              printf '%s\n' 'ENV IS_CLOUD=true' >> "$tmpfile"
+              runtime_env_inserted=true
             fi
           done < "$dockerfile"
 
-          if [[ "$inserted" != true ]]; then
-            echo "Failed to inject CI env into $dockerfile" >&2
+          if [[ "$build_env_inserted" != true ]]; then
+            echo "Failed to inject CI build env into $dockerfile" >&2
+            exit 1
+          fi
+
+          if [[ '${{ matrix.image.name }}' == 'cloud' && "$runtime_env_inserted" != true ]]; then
+            echo "Failed to inject cloud runtime env into $dockerfile" >&2
             exit 1
           fi
 
