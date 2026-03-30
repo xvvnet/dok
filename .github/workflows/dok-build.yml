@@ -55,7 +55,7 @@ permissions:
 
 jobs:
   prepare:
-    runs-on: blacksmith-4vcpu-ubuntu-2204
+    runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.select.outputs.matrix }}
       release_tag: ${{ steps.select.outputs.release_tag }}
@@ -94,7 +94,7 @@ jobs:
 
   build:
     needs: prepare
-    runs-on: blacksmith-4vcpu-ubuntu-2204
+    runs-on: ubuntu-latest
     services:
       postgres:
         image: postgres:16
@@ -220,7 +220,7 @@ jobs:
           platforms: ${{ inputs.platforms }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: |
-            org.opencontainers.image.source=https://github.com/Dokploy/dokploy
+            org.opencontainers.image.source=https://github.com/xvvnet/dok
             org.opencontainers.image.revision=${{ steps.meta.outputs.sha_short }}
             org.opencontainers.image.version=${{ needs.prepare.outputs.release_tag != '' && needs.prepare.outputs.release_tag || format('sha-{0}', steps.meta.outputs.sha_short) }}
           build-args: |
